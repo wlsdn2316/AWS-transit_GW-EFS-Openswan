@@ -1,0 +1,1186 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create a vpc with rds, ec2, route53, and alb.
+
+#########################################################################
+
+Parameters: 
+  01VpcCIDR:
+    Description: VPCcidr
+    Type: String
+    Default: 50.50.0.0/16
+  
+  02PublicSubnet1CIDR:
+    Description: Public1cidr
+    Type: String
+    Default: 50.50.10.0/24
+  
+  03PublicSubnet2CIDR:
+    Description: Public2cidr
+    Type: String
+    Default: 50.50.11.0/24
+  
+  04PrivateSubnet1CIDR:
+    Description: Private1cidr
+    Type: String
+    Default: 50.50.40.0/24
+  
+  05PrivateSubnet2CIDR:
+    Description: Private2cidr
+    Type: String
+    Default: 50.50.41.0/24
+  
+  06PrivateSubnetDB1CIDR:
+    Description: privateDB1cidr
+    Type: String
+    Default: 50.50.42.0/24  
+
+  07PrivateSubnetDB2CIDR:
+    Description: privateDB2cidr
+    Type: String
+    Default: 50.50.43.0/24  
+
+  08InstanceType:
+    Description: You have to enter WebServer EC2 instance type
+    Type: String
+    Default: t2.micro  
+
+  09WebInstanceCount:
+    Description: You can Type Web instance's amount 0~6
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue : 6
+
+  10EC2sshInboundCIDR:
+    Description: EC2sshInboundCIDR 
+    Type: String
+    Default: 0.0.0.0/0 
+  
+  11EC2httpInboundCIDR:
+    Description: EC2httpInboundCIDR 
+    Type: String
+    Default: 0.0.0.0/0
+
+  12RDS3306InboundCIDR:
+    Description: RDS3306InboundCIDR 
+    Type: String
+    Default: 50.50.0.0/16
+
+  13NameOfAllResource:
+    Description: You can type all resource name 
+    Type: String
+    Default: JJWwjcloud
+
+  14PemKeyName:
+    Description: EC2-Keyname
+    Type: AWS::EC2::KeyPair::KeyName
+  
+  15HostedZone:
+    Description: Type Hostedzone
+    Type: String
+    Default: 77106262.wjcloud.co.kr
+
+  16DBCreateDecision:
+    Default: '1'
+    Type: Number
+    Description: if you want to create RDS, Enter 1 
+    ConstraintDescription: must type 0 or 1    
+
+  17DBAllocatedStorage:
+    Default: '20'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '20'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 20 and 1024Gb.  
+
+  18DBInstanceClass:
+    Description: The database instance type
+    Type: String
+    Default: db.t2.micro
+    AllowedValues:
+    - db.t1.micro
+    - db.m1.small
+    - db.m1.medium
+    - db.m1.large
+    - db.m1.xlarge
+    - db.m2.xlarge
+    - db.m2.2xlarge
+    - db.m2.4xlarge
+    - db.m3.medium
+    - db.m3.large
+    - db.m3.xlarge
+    - db.m3.2xlarge
+    - db.m4.large
+    - db.m4.xlarge
+    - db.m4.2xlarge
+    - db.m4.4xlarge
+    - db.m4.10xlarge
+    - db.r3.large
+    - db.r3.xlarge
+    - db.r3.2xlarge
+    - db.r3.4xlarge
+    - db.r3.8xlarge
+    - db.m2.xlarge
+    - db.m2.2xlarge
+    - db.m2.4xlarge
+    - db.cr1.8xlarge
+    - db.t2.micro
+    - db.t2.small
+    - db.t2.medium
+    - db.t2.large
+
+  19DBengine:
+    Description: The database Engine
+    Type: String
+    Default: mysql
+    AllowedValues:
+    - aurora
+    - aurora-mysql
+    - aurora-postgresql
+    - mariadb
+    - mysql
+    - oracle-ee
+    - oracle-se2
+    - oracle-se1
+    - oracle-se
+    - postgres
+    - sqlserver-ee
+    - sqlserver-se
+    - sqlserver-ex
+    - sqlserver-web
+    
+  20DBengineVersion:
+    Description: The database EngineVersion
+    Type: String
+    Default: '5.7.22'
+
+  21AutoScalingDecision:
+    Default: '1'
+    Type: Number
+    Description: If you want to use Autoscaling , Enter 1 
+    ConstraintDescription: must type 0 or 1    
+
+  22DBfamilyname:
+    Description: Enter DBParameterGroup Family
+    Type: String
+    Default: 'mysql5.7'
+
+
+#########################################################################
+
+Mappings: 
+  AWSRegionMap:
+    ap-northeast-1: # 도쿄
+      HVM64: ami-01748a72bed07727c # Amazon Linux 2 AMI (HVM), SSD Volume Type
+    ap-northeast-2: # 서울
+      HVM64: ami-090f5d4d64d839cbc #ami-09282971cf2faa4c9 Amazon Linux 2 AMI (HVM), t2.micro 
+    ap-south-1: #뭄바이
+      HVM64: ami-04b1ddd35fd71475a
+    ap-southeast-1: #싱가폴
+      HVM64: ami-0335fb32dfcdd76e6
+    ap-southeast-2: #시드니
+      HVM64: ami-06ce513624b435a22
+    ca-central-1: # 캐나다(중부)
+      HVM64: ami-0c3e7f50c89a372ae
+    eu-central-1: # 프랑크푸르트
+      HVM64: ami-03c3a7e4263fd998c
+    eu-north-1: # 스톡홀롬
+      HVM64: ami-02cb52d7ba9887a93
+    eu-west-1: # 아일랜드
+      HVM64: ami-01720b5f421cf0179
+    eu-west-2: # 런던
+      HVM64: ami-0e80a462ede03e653
+    eu-west-3: # 파리
+      HVM64: ami-00798d7180f25aac2
+    sa-east-1: #상파울루
+      HVM64: ami-022082b7f1da62478
+    us-east-1: # 버지니아 북부
+      HVM64: ami-0be2609ba883822ec
+    us-east-2: # 오하이오
+      HVM64: ami-0a0ad6b70e61be944
+    us-west-1: # 캘리포니아
+      HVM64: ami-03130878b60947df3
+    us-west-2: # 오레곤
+      HVM64: ami-0479a19f1fac7121a
+
+#########################################################################
+
+
+Conditions: 
+  WebInstanceLaunch0: !Equals [0, !Ref 09WebInstanceCount]
+
+  WebInstanceLaunch1: !And
+  - !Not [!Equals [0, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]
+
+  WebInstanceLaunch2: !And    
+  - !Not [!Equals [0, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]
+
+
+  WebInstanceLaunch3: !And
+  - !Not [!Equals [0, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [2, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]
+
+  WebInstanceLaunch4: !And
+  - !Not [!Equals [0, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [2, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [3, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]  
+
+  WebInstanceLaunch5: !And
+  - !Not [!Equals [0, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [2, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [3, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [4, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]  
+
+  WebInstanceLaunch6: !And
+  - !Not [!Equals [0, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [2, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [3, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [4, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [5, !Ref 09WebInstanceCount]]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]  
+
+  WebInstanceTarget1: !And
+  - !Equals [1, !Ref 09WebInstanceCount]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]
+  
+  WebInstanceTarget2: !And 
+  - !Equals [2, !Ref 09WebInstanceCount]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]] 
+
+  WebInstanceTarget3: !And
+  - !Equals [3, !Ref 09WebInstanceCount]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]
+
+  WebInstanceTarget4: !And
+  - !Equals [4, !Ref 09WebInstanceCount]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]
+
+  WebInstanceTarget5: !And
+  - !Equals [5, !Ref 09WebInstanceCount]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]
+
+  WebInstanceTarget6: !And
+  - !Equals [6, !Ref 09WebInstanceCount]
+  - !Not [!Equals [1, !Ref 21AutoScalingDecision]]   
+
+  DBcreateDecision: !Equals [1, !Ref 16DBCreateDecision]
+  AutoScalingDecision: !Equals [1, !Ref 21AutoScalingDecision]
+
+#########################################################################
+
+Resources: 
+  JJWVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref 01VpcCIDR
+      EnableDnsSupport: 'true' 
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}VPC
+      EnableDnsHostnames: 'true'  
+
+  JJWIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}IGW
+            
+
+  JJWIGWAttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref JJWVPC
+      InternetGatewayId: !Ref JJWIGW
+
+#########################################################################
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref JJWVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '']    
+      CidrBlock: !Ref 02PublicSubnet1CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}PublicSubnet(1) 
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: 
+        Ref: JJWVPC
+      AvailabilityZone: !Select [ 2, !GetAZs '']  
+      CidrBlock: !Ref 03PublicSubnet2CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}PublicSubnet(2)
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs '']
+      VpcId: !Ref JJWVPC 
+      CidrBlock: !Ref 04PrivateSubnet1CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}PrivateSubnet(1)
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 2, !GetAZs '']
+      VpcId: !Ref JJWVPC 
+      CidrBlock: !Ref 05PrivateSubnet2CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}PrivateSubnet(2)
+
+  PrivateSubnetDB1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs '']
+      VpcId: !Ref JJWVPC 
+      CidrBlock: !Ref 06PrivateSubnetDB1CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}PrivateSubnetDB(1)   
+
+  PrivateSubnetDB2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 2, !GetAZs '']
+      VpcId: !Ref JJWVPC 
+      CidrBlock: !Ref 07PrivateSubnetDB2CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}PrivateSubnetDB(2) 
+#########################################################################
+
+  NGWEIP1:
+    Type: AWS::EC2::EIP
+    DependsOn: JJWIGWAttachGateway 
+    Properties:
+      Domain: JJWVPC  
+
+  NGW1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NGWEIP1.AllocationId 
+      SubnetId: !Ref PublicSubnet1  
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}NGW(1)
+  
+  NGWEIP2:
+    Type: AWS::EC2::EIP
+    DependsOn: JJWIGWAttachGateway  
+    Properties:
+      Domain: JJWVPC 
+
+
+  NGW2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NGWEIP2.AllocationId
+      SubnetId: !Ref PublicSubnet2  
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}NGW(2)
+
+#########################################################################
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref JJWVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}Public Routes Table
+
+  AllPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: JJWIGWAttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref JJWIGW
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+#########################################################################
+#가용영역 A
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref JJWVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}Private Routes Table1
+
+  AllPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1 
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NGW1    
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateSubnetDB1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetDB1
+      RouteTableId: !Ref PrivateRouteTable1
+#########################################################################
+#가용영역 C
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref JJWVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}Private Routes Table2    
+  
+  AllPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2 
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NGW2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  PrivateSubnetDB2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetDB2
+      RouteTableId: !Ref PrivateRouteTable2
+
+#########################################################################  
+
+  WebserverAlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB access via port 80, 443
+      GroupName: !Sub ${13NameOfAllResource}WebAlbSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: !Ref 11EC2httpInboundCIDR
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: !Ref 11EC2httpInboundCIDR
+      - IpProtocol: icmp
+        FromPort: '-1'
+        ToPort: '-1'
+        CidrIp: !Ref 11EC2httpInboundCIDR        
+      VpcId: !Ref JJWVPC
+      
+  WebserverEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref JJWVPC
+      GroupDescription: Enable SSH access via port 22
+      GroupName: !Sub ${13NameOfAllResource}WebEC2SecurityGroup    
+      SecurityGroupIngress:  
+      - IpProtocol: tcp
+        FromPort: '22'   
+        ToPort: '22' 
+        CidrIp: !Ref 10EC2sshInboundCIDR 
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: !Ref 11EC2httpInboundCIDR
+      - IpProtocol: tcp
+        FromPort: '8080'   
+        ToPort: '8080'  
+        CidrIp: '0.0.0.0/0'  
+      - IpProtocol: tcp
+        FromPort: '2049'   
+        ToPort: '2049' 
+        CidrIp: '0.0.0.0/0'  
+      - IpProtocol: icmp
+        FromPort: '-1'
+        ToPort: '-1'
+        CidrIp: '0.0.0.0/0'
+
+
+  WebserverRdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable RDS access via port 3306
+      GroupName: !Sub ${13NameOfAllResource}WebRDSSecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '3306'
+        ToPort: '3306'
+        CidrIp: !Ref 12RDS3306InboundCIDR
+      - IpProtocol: icmp
+        FromPort: '-1'
+        ToPort: '-1'
+        CidrIp: '0.0.0.0/0'
+      VpcId: !Ref JJWVPC
+
+  MountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:                                             
+      VpcId: !Ref JJWVPC
+      GroupDescription: Security group for mount target
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '2049'
+        ToPort: '2049'
+        CidrIp: 0.0.0.0/0
+      GroupDescription: Enable Efs access via port 2049        
+      GroupName: !Sub ${13NameOfAllResource}MountTargetSecurityGroup
+
+#########################################################################  
+
+  JJWALB:    
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing 
+      Name: !Sub ${13NameOfAllResource}ALB      
+      SecurityGroups: [!Ref WebserverAlbSecurityGroup]     
+      Subnets: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  ALBListener:
+    Condition: WebInstanceTarget1
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward  
+          TargetGroupArn: !Ref EC2TargetGroup   
+      LoadBalancerArn: !Ref JJWALB 
+      Port: 80
+      Protocol: HTTP
+
+  ALBListener2:
+    Condition: WebInstanceTarget2
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward   
+          TargetGroupArn: !Ref EC2TargetGroup2   
+      LoadBalancerArn: !Ref JJWALB   
+      Port: 80
+      Protocol: HTTP  
+
+  ALBListener3:
+    Condition: WebInstanceTarget3
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroup3   
+      LoadBalancerArn: !Ref JJWALB   
+      Port: 80
+      Protocol: HTTP
+
+  ALBListener4:
+    Condition: WebInstanceTarget4
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroup4   
+      LoadBalancerArn: !Ref JJWALB   
+      Port: 80
+      Protocol: HTTP
+
+  ALBListener5:
+    Condition: WebInstanceTarget5
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroup5   
+      LoadBalancerArn: !Ref JJWALB   
+      Port: 80
+      Protocol: HTTP
+
+  ALBListener6:
+    Condition: WebInstanceTarget6
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref EC2TargetGroup6   
+      LoadBalancerArn: !Ref JJWALB   
+      Port: 80
+      Protocol: HTTP
+
+  AutoScalingALBListener:
+    Condition: AutoScalingDecision
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AutoScalingEC2TargetGroup
+      LoadBalancerArn: !Ref JJWALB   
+      Port: 80
+      Protocol: HTTP
+
+  EC2TargetGroup:
+    Condition: WebInstanceTarget1
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${13NameOfAllResource}EC2TargetGroup
+      Port: 8080    
+      Protocol: HTTP 
+      Targets: 
+        - Id: !If [WebInstanceLaunch1, !Ref EC2Web1, !Ref AWS::NoValue ]                          
+          Port: 8080
+      VpcId: !Ref JJWVPC
+
+  EC2TargetGroup2:
+    Condition: WebInstanceTarget2
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: JJWALB
+    Properties:
+      Name: !Sub ${13NameOfAllResource}EC2TargetGroup
+      Port: 8080     
+      Protocol: HTTP  
+      Targets:   
+        - Id: !Ref EC2Web1
+          Port: 8080
+        - Id: !Ref EC2Web2
+          Port: 8080                      
+      VpcId: !Ref JJWVPC
+
+  EC2TargetGroup3:
+    Condition: WebInstanceTarget3
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: JJWALB
+    Properties:
+      Name: !Sub ${13NameOfAllResource}EC2TargetGroup
+      Port: 8080     
+      Protocol: HTTP  
+      Targets:   
+        - Id: !Ref EC2Web1
+          Port: 8080
+        - Id: !Ref EC2Web2
+          Port: 8080    
+        - Id: !Ref EC2Web3
+          Port: 8080                           
+      UnhealthyThresholdCount: 5 
+      VpcId: !Ref JJWVPC
+
+  EC2TargetGroup4:
+    Condition: WebInstanceTarget4
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: JJWALB
+    Properties:
+      Name: !Sub ${13NameOfAllResource}EC2TargetGroup
+      Port: 8080     
+      Protocol: HTTP  
+      Targets:   
+        - Id: !Ref EC2Web1
+          Port: 8080
+        - Id: !Ref EC2Web2
+          Port: 8080
+        - Id: !Ref EC2Web3
+          Port: 8080 
+        - Id: !Ref EC2Web4
+          Port: 8080                                       
+      UnhealthyThresholdCount: 5 
+      VpcId: !Ref JJWVPC
+
+  EC2TargetGroup5:
+    Condition: WebInstanceTarget5
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: JJWALB
+    Properties:
+      Name: !Sub ${13NameOfAllResource}EC2TargetGroup
+      Port: 8080     
+      Protocol: HTTP  
+      Targets:   
+        - Id: !Ref EC2Web1
+          Port: 8080
+        - Id: !Ref EC2Web2
+          Port: 8080                      
+        - Id: !Ref EC2Web3
+          Port: 8080 
+        - Id: !Ref EC2Web4
+          Port: 8080
+        - Id: !Ref EC2Web5
+          Port: 8080                  
+      UnhealthyThresholdCount: 5 
+      VpcId: !Ref JJWVPC
+
+  EC2TargetGroup6:
+    Condition: WebInstanceTarget6
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: JJWALB
+    Properties:
+      Name: !Sub ${13NameOfAllResource}EC2TargetGroup
+      Port: 8080     
+      Protocol: HTTP  
+      Targets:   
+        - Id: !Ref EC2Web1
+          Port: 8080
+        - Id: !Ref EC2Web2
+          Port: 8080
+        - Id: !Ref EC2Web3
+          Port: 8080 
+        - Id: !Ref EC2Web4
+          Port: 8080 
+        - Id: !Ref EC2Web5
+          Port: 8080 
+        - Id: !Ref EC2Web6 
+          Port: 8080                                                              
+      UnhealthyThresholdCount: 5 
+      VpcId: !Ref JJWVPC
+      
+  AutoScalingEC2TargetGroup:
+    Condition: AutoScalingDecision
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: JJWALB
+    Properties:
+      Name: !Sub ${13NameOfAllResource}EC2TargetGroup
+      Port: 8080     
+      Protocol: HTTP                
+      VpcId: !Ref JJWVPC
+
+######################################################################### 
+  
+  EC2Web1:
+    Condition: WebInstanceLaunch1
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ]     
+      InstanceType: !Ref 08InstanceType
+      KeyName: !Ref 14PemKeyName
+      Tags:
+      - Key: Name
+        Value: !Sub ${13NameOfAllResource}EC2Web1    
+      NetworkInterfaces: 
+      - GroupSet:
+        - !Ref WebserverEC2SecurityGroup       
+        SubnetId: !Ref PrivateSubnet1 
+        DeviceIndex : "0"
+        Description: !Sub ${13NameOfAllResource}NGW(1)
+        AssociatePublicIpAddress: 'false'      
+        DeleteOnTermination: 'true'   
+      UserData: 
+        Fn::Base64: 
+          !Sub | 
+
+  EC2Web2:
+    Condition: WebInstanceLaunch2
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ]     
+      InstanceType: !Ref 08InstanceType
+      KeyName: !Ref 14PemKeyName
+      Tags:
+      - Key: Name
+        Value: !Sub ${13NameOfAllResource}EC2Web2      
+      NetworkInterfaces: 
+      - GroupSet:
+        - !Ref WebserverEC2SecurityGroup       
+        SubnetId: !Ref PrivateSubnet2  
+        DeviceIndex : "0"
+        Description: !Sub ${13NameOfAllResource}NGW(2)
+        AssociatePublicIpAddress: 'false'       
+        DeleteOnTermination: 'true'           
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+
+  EC2Web3:
+    Condition: WebInstanceLaunch3
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ]     
+      InstanceType: !Ref 08InstanceType
+      KeyName: !Ref 14PemKeyName
+      Tags:
+      - Key: Name
+        Value: !Sub ${13NameOfAllResource}EC2Web3      
+      NetworkInterfaces: 
+      - GroupSet:
+        - !Ref WebserverEC2SecurityGroup       
+        SubnetId: !Ref PrivateSubnet1  
+        DeviceIndex : "0"
+        Description: !Sub ${13NameOfAllResource}NGW(3)
+        AssociatePublicIpAddress: 'false'       
+        DeleteOnTermination: 'true'           
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+
+  EC2Web4:
+    Condition: WebInstanceLaunch4
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ]     
+      InstanceType: !Ref 08InstanceType
+      KeyName: !Ref 14PemKeyName
+      Tags:
+      - Key: Name
+        Value: !Sub ${13NameOfAllResource}EC2Web4      
+      NetworkInterfaces: 
+      - GroupSet:
+        - !Ref WebserverEC2SecurityGroup       
+        SubnetId: !Ref PrivateSubnet2  
+        DeviceIndex : "0"
+        Description: !Sub ${13NameOfAllResource}NGW(4)
+        AssociatePublicIpAddress: 'false'       
+        DeleteOnTermination: 'true'           
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+
+  EC2Web5:
+    Condition: WebInstanceLaunch5
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ]     
+      InstanceType: !Ref 08InstanceType
+      KeyName: !Ref 14PemKeyName
+      Tags:
+      - Key: Name
+        Value: !Sub ${13NameOfAllResource}EC2Web5      
+      NetworkInterfaces: 
+      - GroupSet:
+        - !Ref WebserverEC2SecurityGroup       
+        SubnetId: !Ref PrivateSubnet1  
+        DeviceIndex : "0"
+        Description: !Sub ${13NameOfAllResource}NGW(5)
+        AssociatePublicIpAddress: 'false'       
+        DeleteOnTermination: 'true'           
+      UserData: 
+        Fn::Base64: 
+          !Sub | 
+          
+  EC2Web6:
+    Condition: WebInstanceLaunch6
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ]     
+      InstanceType: !Ref 08InstanceType
+      KeyName: !Ref 14PemKeyName
+      Tags:
+      - Key: Name
+        Value: !Sub ${13NameOfAllResource}EC2Web6      
+      NetworkInterfaces: 
+      - GroupSet:
+        - !Ref WebserverEC2SecurityGroup       
+        SubnetId: !Ref PrivateSubnet2  
+        DeviceIndex : "0"
+        Description: !Sub ${13NameOfAllResource}NGW(6)
+        AssociatePublicIpAddress: 'false'       
+        DeleteOnTermination: 'true'           
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+
+
+#########################################################################
+
+  DBSubnetGroup1:
+    Condition: DBcreateDecision
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: 'DBSubnetGroup1'
+      DBSubnetGroupName: !Sub ${13NameOfAllResource}DBSubnetGroup
+      SubnetIds: 
+        - !Ref PrivateSubnetDB1
+        - !Ref PrivateSubnetDB2
+
+  DBParameterGroup1:
+    Condition: DBcreateDecision
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: 'DBParameterGroup1' 
+      Family: !Ref 22DBfamilyname
+      Parameters: 
+        lower_case_table_names : '1'
+        character_set_client : 'utf8'
+        character_set_connection : 'utf8'
+        character_set_database : 'utf8'
+        character_set_filesystem : 'utf8'
+        character_set_results : 'utf8'
+        character_set_server : 'utf8'
+        character_set_filesystem : 'binary'
+        collation_connection : 'utf8_general_ci'
+        collation_server : 'utf8_general_ci'
+        slow_query_log : '1'
+        time_zone : 'Asia/Seoul'
+        long_query_time : '5'
+
+  MasterDB:
+    Condition: DBcreateDecision
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier : JJWMasterDB
+      AllocatedStorage: !Ref 17DBAllocatedStorage
+      DBInstanceClass: !Ref 18DBInstanceClass
+      Engine: !Ref 19DBengine
+      EngineVersion: !Ref 20DBengineVersion
+      MasterUsername: "jinwoo" 
+      MasterUserPassword: "jt201wdb"
+      BackupRetentionPeriod: '5'  
+      DBParameterGroupName: !Ref DBParameterGroup1  
+      MultiAZ: 'true' 
+      DBSubnetGroupName: !Ref DBSubnetGroup1 
+      VPCSecurityGroups: [!GetAtt [ WebserverRdsSecurityGroup, GroupId]]
+
+  ReplicaDB:
+    Condition: DBcreateDecision
+    Type: AWS::RDS::DBInstance
+    Properties:
+      SourceDBInstanceIdentifier: !Ref MasterDB 
+      DBInstanceClass: !Ref 18DBInstanceClass
+      VPCSecurityGroups: [!GetAtt [ WebserverRdsSecurityGroup, GroupId]] 
+      Tags:
+      - Key: Name
+        Value: !Sub ${13NameOfAllResource}ReadReplicaDatabase
+
+
+#########################################################################
+# Route53 놓을 자리
+  JinwooDNSRecord:
+    DependsOn: JJWALB
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      HostedZoneName: !Join ['', [!Ref 15HostedZone, "."]] 
+      Name: !Join ['',[wlsdn, ".", !Ref 15HostedZone, "."]]  
+      Type: CNAME
+      TTL: '900' 
+      ResourceRecords: [!GetAtt JJWALB.DNSName]  
+      
+#########################################################################
+
+  LaunchTemplate1:  
+    Condition: AutoScalingDecision  
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateData: 
+        ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ] 
+        InstanceType: !Ref 08InstanceType
+        KeyName: !Ref 14PemKeyName
+        SecurityGroupIds: [!GetAtt [ WebserverEC2SecurityGroup, GroupId]] 
+      LaunchTemplateName: JJWLaunchTemplate
+  
+  AutoScalingGroup1:
+    Condition: AutoScalingDecision
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties: 
+      AutoScalingGroupName: !Sub ${13NameOfAllResource}AutoScalingGroup1
+      Cooldown: '60'  
+      HealthCheckGracePeriod: '300' 
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref LaunchTemplate1
+        Version: !GetAtt LaunchTemplate1.LatestVersionNumber
+      MaxSize: '10' 
+      MinSize: !Ref 09WebInstanceCount 
+      DesiredCapacity: !Ref 09WebInstanceCount
+      MetricsCollection: 
+        - Granularity: "1Minute"
+          Metrics: 
+            - "GroupMinSize"
+            - "GroupMaxSize"
+            - "GroupDesiredCapacity"
+      NewInstancesProtectedFromScaleIn: 'false' 
+      TargetGroupARNs: [!Ref AutoScalingEC2TargetGroup] 
+      VPCZoneIdentifier: 
+        - Ref: PrivateSubnet1
+        - Ref: PrivateSubnet2
+
+  ScalingPolicy1:
+    Condition: AutoScalingDecision
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AutoScalingGroupName: !Ref AutoScalingGroup1
+      PolicyType: 'TargetTrackingScaling'
+      TargetTrackingConfiguration: 
+        PredefinedMetricSpecification: 
+          PredefinedMetricType: ASGAverageCPUUtilization  
+        TargetValue: '70'  
+
+#########################################################################
+# Efs 놓을 자리
+
+  EFSFileSystemResource:
+    Type: AWS::EFS::FileSystem
+    Properties: 
+      BackupPolicy:
+        Status: DISABLED 
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${13NameOfAllResource}FileSystem
+
+      LifecyclePolicies: 
+        - TransitionToIA: AFTER_90_DAYS  
+      PerformanceMode: 'generalPurpose'   
+      ThroughputMode: 'bursting' 
+  MountTarget1: 
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystemResource
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroups: [!GetAtt [ MountTargetSecurityGroup, GroupId]] 
+
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystemResource
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroups: [!GetAtt [ MountTargetSecurityGroup, GroupId]] 
+
+#########################################################################
+
+  #WjcloudTransitGateway:
+  #  Type: AWS::EC2::TransitGateway
+  #  Properties:
+  #    Tags:
+  #      - Key: Name
+  #        Value: !Sub ${13NameOfAllResource}TGW1  
+
+  #TransitGatewayAttachment1:
+  #  Type: AWS::EC2::TransitGatewayAttachment
+  #  DependsOn: JJWVPC
+  #  Properties:
+  #    VpcId: !Ref JJWVPC
+  #    SubnetIds:   
+  #    - !Ref PrivateSubnet1
+  #    - !Ref PrivateSubnet2
+  #    TransitGatewayId: !Ref WjcloudTransitGateway
+  #    Tags:
+  #      - Key: Name
+  #        Value: !Sub ${13NameOfAllResource}TGW1_Att  
+
+  #TransitGatewayRoute1:
+  #  Type: AWS::EC2::Route
+  #  DependsOn: TransitGatewayAttachment1
+  #  Properties:
+  #    RouteTableId: !Ref PrivateRouteTable1
+  #    DestinationCidrBlock: 50.0.0.0/8
+  #    TransitGatewayId: !Ref WjcloudTransitGateway
+
+  #TransitGatewayRoute2:
+  #  Type: AWS::EC2::Route
+  #  DependsOn: TransitGatewayAttachment1
+  #  Properties:
+  #    RouteTableId: !Ref PrivateRouteTable2
+  #    DestinationCidrBlock: 50.0.0.0/8
+  #    TransitGatewayId: !Ref WjcloudTransitGateway
+  
+#########################################################################
+
+
+Outputs:
+  01JJWVPC:   
+    Description: Information about VPC
+    Value: !Ref JJWVPC
+    Export:              
+      Name: ProdVPC      
+
+  02PublicSubnet1:
+    Description: Information about PublicSubnet1
+    Value: !Ref PublicSubnet1
+    Export:             
+      Name: ProdPublicSubnet1
+
+  03PublicSubnet2:
+    Description: Information about PublicSubnet2
+    Value: !Ref PublicSubnet2
+    Export:             
+      Name: ProdPublicSubnet2
+
+  04PrivateSubnet1:
+    Description: Information about PrivateSubnet1
+    Value: !Ref PrivateSubnet1
+    Export:             
+      Name: ProdPrivateSubnet1
+
+  05PrivateSubnet2:
+    Description: Information about PrivateSubnet2
+    Value: !Ref PrivateSubnet2
+    Export:             
+      Name: ProdPrivateSubnet2   
+
+  06PrivateSubnetDB1:
+    Description: Information about PrivateSubnetDB1
+    Value: !Ref PrivateSubnetDB1
+    Export:             
+      Name: ProdPrivateSubnetDB1    
+
+  07PrivateSubnetDB2:
+    Description: Information about PrivateSubnetDB2
+    Value: !Ref PrivateSubnetDB2
+    Export:             
+      Name: ProdPrivateSubnetDB2    
+
+  08WebserverEC2SecurityGroup:
+    Description: Information about WebserverEC2SecurityGroup
+    Value: !Ref WebserverEC2SecurityGroup
+    Export:             
+      Name: ProdWebserverEC2SecurityGroup  
+
+  09WebserverRdsSecurityGroup:
+    Description: Information about WebserverRdsSecurityGroup
+    Value: !Ref WebserverRdsSecurityGroup
+    Export:             
+      Name: ProdWebserverRdsSecurityGroup
+  
+  10VpcCIDR:
+    Description: Information about VpcCIDR
+    Value: !Ref 01VpcCIDR
+    Export:             
+      Name: ProdVpcCIDR
+  
+  11PrivateRouteTable1: 
+    Description: Information about PrivateRouteTable1
+    Value: !Ref PrivateRouteTable1
+    Export:             
+      Name: ProdPrivateRouteTable1  
+
+  12PrivateRouteTable2: 
+    Description: Information about PrivateRouteTable2
+    Value: !Ref PrivateRouteTable2
+    Export:             
+      Name: ProdPrivateRouteTable2 
+
+  #13TransitGateway:
+  #  Description: Information about TransitGateway
+  #  Value: !Ref WjcloudTransitGateway
+  #  Export:             
+  #    Name: ProdWjcloudTransitGateway
+#########################################################################
