@@ -1,0 +1,289 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create a vpc with OpenSwan and vpn.
+
+#########################################################################
+
+Parameters: 
+  01VpcCIDR:
+    Description: VPCcidr
+    Type: String
+    Default: 50.54.0.0/16
+  
+  02PublicSubnet1CIDR:
+    Description: Public1cidr
+    Type: String
+    Default: 50.54.10.0/24
+
+  03EC2sshInboundCIDR:
+    Description: EC2sshInboundCIDR 
+    Type: String
+    Default: 0.0.0.0/0 
+  
+  04NameOfAllResource:
+    Description: You can type all resource name 
+    Type: String
+    Default: JJWOpenswan
+
+  05InstanceType:
+    Description: You have to enter WebServer EC2 instance type
+    Type: String
+    Default: t2.micro  
+
+  06PemKeyName:
+    Description: EC2-Keyname
+    Type: AWS::EC2::KeyPair::KeyName
+  
+
+#########################################################################
+
+Mappings: 
+  AWSRegionMap:
+    ap-northeast-2: # 서울
+      HVM64: ami-0bbf6be7379d8cec3 #ami-0094965d55b3bb1ff  Amazon Linux 2 AMI (HVM), t2.micro 
+
+#########################################################################
+Resources: 
+  JJWVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref 01VpcCIDR
+      EnableDnsSupport: true 
+      Tags:
+        - Key: Name
+          Value: !Sub ${04NameOfAllResource}VPC
+
+  JJWIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${04NameOfAllResource}IGW
+            
+
+  JJWIGWAttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref JJWVPC
+      InternetGatewayId: !Ref JJWIGW
+
+#########################################################################
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref JJWVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '']   
+      CidrBlock: !Ref 02PublicSubnet1CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${04NameOfAllResource}PublicSubnet(1) 
+
+#########################################################################
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref JJWVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${04NameOfAllResource}Public Routes Table
+
+  AllPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: JJWIGWAttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref JJWIGW
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+#########################################################################  
+      
+  CGWEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref JJWVPC
+      GroupDescription: Enable SSH access via port 22
+      GroupName: !Sub ${04NameOfAllResource}WebEC2SecurityGroup      
+      SecurityGroupIngress: 
+      - IpProtocol: tcp
+        FromPort: '22'  
+        ToPort: '22' 
+        CidrIp: !Ref 03EC2sshInboundCIDR  
+
+
+######################################################################### 
+
+  CustomerGateway:
+    DependsOn: EC2Web1
+    Type: AWS::EC2::CustomerGateway
+    Properties:
+      Type: ipsec.1
+      BgpAsn: '65000'
+      IpAddress: !GetAtt EC2Web1.PublicIp
+      Tags:
+      - Key: Name
+        Value: !Sub ${04NameOfAllResource}CustomerGateway1
+
+  CustomerGateway2:
+    DependsOn: EC2Web2
+    Type: AWS::EC2::CustomerGateway
+    Properties:
+      Type: ipsec.1
+      BgpAsn: '65000'
+      IpAddress: !GetAtt EC2Web2.PublicIp
+      Tags:
+      - Key: Name
+        Value: !Sub ${04NameOfAllResource}CustomerGateway2
+
+  VPNGateway:
+    Type: AWS::EC2::VPNGateway
+    Properties:
+      Type: ipsec.1
+      AmazonSideAsn: '64512'
+      Tags:
+      - Key: Name
+        Value: !Sub ${04NameOfAllResource}VPNGateway
+
+  VPNGateway2:
+    Type: AWS::EC2::VPNGateway
+    Properties:
+      Type: ipsec.1
+      AmazonSideAsn: '64512'
+      Tags:
+      - Key: Name
+        Value: !Sub ${04NameOfAllResource}VPNGateway2        
+
+  VPNGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !ImportValue ProdVPC
+      VpnGatewayId:
+        Ref: VPNGateway
+
+  VPNGatewayAttachment2:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !ImportValue Prod2VPC
+      VpnGatewayId:
+        Ref: VPNGateway2
+
+  VPNConnection:
+    Type: AWS::EC2::VPNConnection
+    Properties:
+      Type: ipsec.1
+      StaticRoutesOnly: 'true'
+      CustomerGatewayId: !Ref CustomerGateway
+      VpnGatewayId: !Ref VPNGateway
+      Tags:
+      - Key: Name
+        Value: !Sub ${04NameOfAllResource}VPNConnection
+
+  VPNConnection2:
+    Type: AWS::EC2::VPNConnection
+    Properties:
+      Type: ipsec.1
+      StaticRoutesOnly: 'true'
+      CustomerGatewayId: !Ref CustomerGateway2
+      VpnGatewayId: !Ref VPNGateway2
+      Tags:
+      - Key: Name
+        Value: !Sub ${04NameOfAllResource}VPNConnection2
+
+  VPNConnectionRoute:
+    Type: AWS::EC2::VPNConnectionRoute
+    Properties:
+      VpnConnectionId: !Ref VPNConnection
+      DestinationCidrBlock: !Ref 01VpcCIDR
+
+  VPNConnectionRoute2:
+    Type: AWS::EC2::VPNConnectionRoute
+    Properties:
+      VpnConnectionId: !Ref VPNConnection2
+      DestinationCidrBlock: !Ref 01VpcCIDR
+
+######################################################################### 
+  
+  EC2Web1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ]     
+      InstanceType: !Ref 05InstanceType
+      KeyName: !Ref 06PemKeyName
+      Tags:
+      - Key: Name
+        Value: !Sub ${04NameOfAllResource}CGW1 
+      NetworkInterfaces: 
+      - GroupSet:
+        - !Ref CGWEC2SecurityGroup
+        SubnetId: !Ref PublicSubnet1  
+        DeviceIndex : "0"
+        Description: !Sub ${04NameOfAllResource}NetworkInterface(1)
+        AssociatePublicIpAddress: 'true'     
+        DeleteOnTermination: 'true'  
+      UserData: 
+        Fn::Base64: 
+          !Sub | 
+
+  EC2Web2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ AWSRegionMap, !Ref AWS::Region , HVM64 ]     
+      InstanceType: !Ref 05InstanceType
+      KeyName: !Ref 06PemKeyName
+      Tags:
+      - Key: Name
+        Value: !Sub ${04NameOfAllResource}CGW2      
+      NetworkInterfaces: 
+      - GroupSet:
+        - !Ref CGWEC2SecurityGroup
+        SubnetId: !Ref PublicSubnet1  
+        DeviceIndex : "0"
+        Description: !Sub ${04NameOfAllResource}NetworkInterface(2)
+        AssociatePublicIpAddress: 'true'     
+        DeleteOnTermination: 'true'  
+      UserData: 
+        Fn::Base64: 
+          !Sub | 
+
+#########################################################################
+
+  ProdVPCvpnRoute:
+    DependsOn: VPNConnection
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !ImportValue ProdPrivateRouteTable1
+      DestinationCidrBlock: !Ref 01VpcCIDR
+      GatewayId: !Ref VPNGateway
+
+  ProdVPCvpnRoute2:
+    DependsOn: VPNConnection
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !ImportValue ProdPrivateRouteTable2
+      DestinationCidrBlock: !Ref 01VpcCIDR
+      GatewayId: !Ref VPNGateway      
+
+  ProdVPCvpnRoute3:
+    DependsOn: VPNConnection
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !ImportValue Prod2PrivateRouteTable1
+      DestinationCidrBlock: !Ref 01VpcCIDR
+      GatewayId: !Ref VPNGateway2
+
+  ProdVPCvpnRoute24:
+    DependsOn: VPNConnection
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !ImportValue Prod2PrivateRouteTable2
+      DestinationCidrBlock: !Ref 01VpcCIDR
+      GatewayId: !Ref VPNGateway2      
+
+
+
