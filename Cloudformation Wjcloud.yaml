@@ -219,7 +219,6 @@ Conditions:
   - !Not [!Equals [1, !Ref 09WebInstanceCount]]
   - !Not [!Equals [1, !Ref 21AutoScalingDecision]]
 
-
   WebInstanceLaunch3: !And
   - !Not [!Equals [0, !Ref 09WebInstanceCount]]
   - !Not [!Equals [1, !Ref 09WebInstanceCount]]
